@@ -789,10 +789,55 @@ function themeOptionsHtml(selectedId){
   return opts;
 }
 
+var SQL_SERIES = "create table if not exists trocdecartes_series (id uuid primary key default gen_random_uuid(), name text not null unique, start_year int, created_at timestamptz default now());\nalter table trocdecartes_series disable row level security;\nalter table trocdecartes_collections add column if not exists series_id uuid references trocdecartes_series(id) on delete set null;";
+
+async function loadSeries(){
+  try{ state.series = await apiSelect('trocdecartes_series', 'select=*&order=name.asc'); state.seriesAvailable = true; }
+  catch(e){ state.series = []; state.seriesAvailable = false; }
+  return state.series;
+}
+
+function seriesOptionsHtml(selectedId){
+  var opts = '<option value="">Sans série</option>';
+  (state.series||[]).forEach(function(s){ opts += '<option value="'+esc(s.id)+'"'+(s.id===selectedId?' selected':'')+'>'+esc(s.name)+(s.start_year?' ('+s.start_year+')':'')+'</option>'; });
+  opts += '<option value="__new__">+ Nouvelle série…</option>';
+  return opts;
+}
+function seriesFieldHtml(prefix, selectedId){
+  return '<div class="field"><label>Série</label><select id="'+prefix+'-series">'+seriesOptionsHtml(selectedId)+'</select>'+
+    '<div id="'+prefix+'-series-new" style="display:none;gap:8px;margin-top:8px;">'+
+      '<input id="'+prefix+'-series-name" placeholder="Nom (ex. Mega Evolution)" style="flex:2;">'+
+      '<input id="'+prefix+'-series-year" type="number" placeholder="Année début" style="flex:1;">'+
+    '</div></div>';
+}
+function bindSeriesField(prefix){
+  var sel = qs(prefix+'-series');
+  var newBox = qs(prefix+'-series-new');
+  sel.onchange = function(){ newBox.style.display = sel.value==='__new__' ? 'flex' : 'none'; };
+  return {
+    resolve: async function(){
+      if(sel.value==='__new__'){
+        var name = (qs(prefix+'-series-name').value||'').trim();
+        if(!name) return null;
+        var existing = (state.series||[]).find(function(s){ return s.name.toLowerCase()===name.toLowerCase(); });
+        if(existing) return existing.id;
+        var yearVal = qs(prefix+'-series-year').value;
+        var year = yearVal ? parseInt(yearVal) : null;
+        var rows = await apiInsert('trocdecartes_series', [{ name: name, start_year: year }]);
+        var newRow = rows && rows[0];
+        if(newRow){ state.series = state.series||[]; state.series.push(newRow); }
+        return newRow ? newRow.id : null;
+      }
+      return sel.value || null;
+    }
+  };
+}
+
 async function renderHome(){
   var main = qs('main');
   main.innerHTML = '<p class="muted">Chargement…</p>';
   var themes = await loadThemes();
+  await loadSeries();
   var collections = await apiSelect('trocdecartes_collections', 'select=*&order=created_at.asc');
   state.collections = collections;
 
@@ -857,7 +902,16 @@ async function renderHome(){
   cardCounts.forEach(function(c){ if(ownedSet[c.id]) ownedByColl[c.collection_id]=(ownedByColl[c.collection_id]||0)+1; });
 
   list.innerHTML = '';
-  visible.forEach(function(c, idx){
+  var seriesById = {}; (state.series||[]).forEach(function(s){ seriesById[s.id]=s; });
+  var groups = {};
+  visible.forEach(function(c){
+    var key = (c.series_id && seriesById[c.series_id]) ? seriesById[c.series_id].name : '';
+    (groups[key] = groups[key]||[]).push(c);
+  });
+  var groupNames = Object.keys(groups).filter(function(k){ return k!==''; }).sort().reverse();
+  if(groups['']) groupNames.push('');
+
+  function renderCollRow(c){
     var total = totalsByColl[c.id]||0;
     var owned = ownedByColl[c.id]||0;
     var pct = total ? Math.round(owned/total*100) : 0;
@@ -873,7 +927,14 @@ async function renderHome(){
     var renameBtn = row.querySelector('.coll-rename');
     if(renameBtn) renameBtn.onclick = function(e){ e.stopPropagation(); openRenameCollectionModal(c.id, c.name); };
     row.onclick = function(){ navigate('collection', c.id); };
-    list.appendChild(row);
+    return row;
+  }
+
+  groupNames.forEach(function(gname){
+    var seriesObj = gname ? (state.series||[]).find(function(s){ return s.name===gname; }) : null;
+    var headerText = gname ? (gname + (seriesObj && seriesObj.start_year ? ' ('+seriesObj.start_year+')' : '')) : 'Sans série';
+    list.appendChild(el('<div style="grid-column:1/-1;font-size:14px;font-weight:700;color:var(--paper);margin:18px 0 8px;">'+esc(headerText)+'</div>'));
+    groups[gname].forEach(function(c){ list.appendChild(renderCollRow(c)); });
   });
 }
 
@@ -927,16 +988,20 @@ async function openNewCollectionModal(){
     '<h3>Nouvelle collection</h3>'+
     '<div class="field"><label>Nom (ex. 151, 25 ans, Pokémon Go)</label><input id="m-coll-name" placeholder="151"></div>'+
     themeField+
+    seriesFieldHtml('m-coll', '')+
     photoFieldHtml('m-coll-photo', null)+
     '<button class="btn-primary" id="m-coll-save">Créer</button>'
   );
   var photo = bindPhotoField('m-coll-photo');
+  var seriesCtl = bindSeriesField('m-coll');
   qs('m-coll-save').onclick = async function(){
     var name = (qs('m-coll-name').value||'').trim();
     if(!name) return;
     var row = { name: name, created_by: state.user.id };
     var sel = qs('m-coll-theme');
     if(sel && sel.value) row.theme_id = sel.value;
+    var seriesId = await seriesCtl.resolve();
+    if(seriesId) row.series_id = seriesId;
     if(typeof photo.value === 'string') row.image = photo.value;
     try{ await apiInsert('trocdecartes_collections', [row]); }
     catch(e){ alert('Erreur : '+imageErrHint(e)); return; }
@@ -1091,16 +1156,19 @@ function openRenameCollectionModal(collectionId, currentName){
     '<h3>Modifier la collection</h3>'+
     '<div class="field"><label>Nom</label><input id="m-rename-coll" value="'+esc(currentName)+'"></div>'+
     themeField+
+    seriesFieldHtml('m-rename', coll.series_id||'')+
     photoFieldHtml('m-rename-photo', coll.image)+
     '<button class="btn-primary" id="m-rename-save">Enregistrer</button>'
   );
   var photo = bindPhotoField('m-rename-photo');
+  var seriesCtl = bindSeriesField('m-rename');
   qs('m-rename-save').onclick = async function(){
     var name = (qs('m-rename-coll').value||'').trim();
     if(!name) return;
     var patch = { name: name };
     var sel = qs('m-rename-theme');
     if(sel) patch.theme_id = sel.value ? sel.value : null;
+    patch.series_id = await seriesCtl.resolve();
     if(photo.value !== undefined) patch.image = photo.value;
     try{ await apiUpdate('trocdecartes_collections', 'id=eq.'+collectionId, patch); }
     catch(e){ alert('Erreur : '+imageErrHint(e)); return; }
