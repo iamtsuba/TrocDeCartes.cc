@@ -507,6 +507,21 @@ async function apiSelect(table, query){
   if(!res.ok) throw new Error(await res.text());
   return res.json();
 }
+async function apiSelectAll(table, query){
+  var pageSize = 1000;
+  var all = [];
+  var offset = 0;
+  while(true){
+    var url = SUPABASE_URL + '/rest/v1/' + table + '?' + query;
+    var res = await fetch(url, { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer '+SUPABASE_KEY, Range: offset+'-'+(offset+pageSize-1) } });
+    if(!res.ok) throw new Error(await res.text());
+    var page = await res.json();
+    all = all.concat(page);
+    if(page.length < pageSize) break;
+    offset += pageSize;
+  }
+  return all;
+}
 async function apiInsert(table, rows, opts){
   opts = opts || {};
   var url = SUPABASE_URL + '/rest/v1/' + table + (opts.upsertOn ? '?on_conflict='+opts.upsertOn : '');
@@ -893,7 +908,7 @@ async function renderHome(){
     return;
   }
 
-  var cardCounts = await apiSelect('trocdecartes_cards', 'select=id,collection_id');
+  var cardCounts = await apiSelectAll('trocdecartes_cards', 'select=id,collection_id');
   var myCards = await apiSelect('trocdecartes_user_cards', 'user_id=eq.'+state.user.id+'&quantity=gt.0&select=card_id');
   var ownedSet = {}; myCards.forEach(function(r){ ownedSet[r.card_id]=true; });
   var totalsByColl = {};
@@ -1902,12 +1917,12 @@ async function renderFriendDetail(friendId){
 
   var collections = await apiSelect('trocdecartes_collections', 'select=*&order=created_at.asc');
   var collMap = {}; collections.forEach(function(c){ collMap[c.id]=c.name; });
-  var cards = await apiSelect('trocdecartes_cards', 'select=*&order=number.asc');
+  var cards = await apiSelectAll('trocdecartes_cards', 'select=*&order=number.asc');
 
-  var myRows = await apiSelect('trocdecartes_user_cards', 'user_id=eq.'+state.user.id+'&select=card_id,variant,quantity,price,for_sale');
+  var myRows = await apiSelectAll('trocdecartes_user_cards', 'user_id=eq.'+state.user.id+'&select=card_id,variant,quantity,price,for_sale');
   var myMap = {}; myRows.forEach(function(r){ (myMap[r.card_id]=myMap[r.card_id]||{})[r.variant]=r; });
 
-  var theirRows = await apiSelect('trocdecartes_user_cards', 'user_id=eq.'+friendId+'&select=card_id,variant,quantity,price,for_sale');
+  var theirRows = await apiSelectAll('trocdecartes_user_cards', 'user_id=eq.'+friendId+'&select=card_id,variant,quantity,price,for_sale');
   var theirMap = {}; theirRows.forEach(function(r){ (theirMap[r.card_id]=theirMap[r.card_id]||{})[r.variant]=r; });
 
   var lockedMap = await getLockedMap();
