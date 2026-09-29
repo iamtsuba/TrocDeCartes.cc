@@ -1000,7 +1000,9 @@ async function openNewCollectionModal(){
     var row = { name: name, created_by: state.user.id };
     var sel = qs('m-coll-theme');
     if(sel && sel.value) row.theme_id = sel.value;
-    var seriesId = await seriesCtl.resolve();
+    var seriesId;
+    try{ seriesId = await seriesCtl.resolve(); }
+    catch(e){ alert('Erreur (série) : '+e.message+'\n\nVérifie que la table trocdecartes_series existe et que RLS est désactivée dessus :\n'+SQL_SERIES); return; }
     if(seriesId) row.series_id = seriesId;
     if(typeof photo.value === 'string') row.image = photo.value;
     try{ await apiInsert('trocdecartes_collections', [row]); }
@@ -1168,7 +1170,8 @@ function openRenameCollectionModal(collectionId, currentName){
     var patch = { name: name };
     var sel = qs('m-rename-theme');
     if(sel) patch.theme_id = sel.value ? sel.value : null;
-    patch.series_id = await seriesCtl.resolve();
+    try{ patch.series_id = await seriesCtl.resolve(); }
+    catch(e){ alert('Erreur (série) : '+e.message+'\n\nVérifie que la table trocdecartes_series existe et que RLS est désactivée dessus :\n'+SQL_SERIES); return; }
     if(photo.value !== undefined) patch.image = photo.value;
     try{ await apiUpdate('trocdecartes_collections', 'id=eq.'+collectionId, patch); }
     catch(e){ alert('Erreur : '+imageErrHint(e)); return; }
