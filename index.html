@@ -934,7 +934,7 @@ async function renderHome(){
     var seriesObj = gname ? (state.series||[]).find(function(s){ return s.name===gname; }) : null;
     var headerText = gname ? (gname + (seriesObj && seriesObj.start_year ? ' ('+seriesObj.start_year+')' : '')) : 'Sans série';
     list.appendChild(el('<div style="grid-column:1/-1;font-size:14px;font-weight:700;color:var(--paper);margin:18px 0 8px;">'+esc(headerText)+'</div>'));
-    groups[gname].forEach(function(c){ list.appendChild(renderCollRow(c)); });
+    groups[gname].slice().sort(function(a,b){ return b.name.localeCompare(a.name); }).forEach(function(c){ list.appendChild(renderCollRow(c)); });
   });
 }
 
