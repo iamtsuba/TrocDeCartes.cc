@@ -400,6 +400,7 @@ var ICON_FRIENDS = '<svg viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r
 var ICON_CART = '<svg viewBox="0 0 24 24" fill="none"><path d="M4 6h2l1.5 10.5a2 2 0 0 0 2 1.7h7a2 2 0 0 0 2-1.6L20 8H7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="10" cy="21" r="1.4" fill="currentColor"/><circle cx="17" cy="21" r="1.4" fill="currentColor"/></svg>';
 var ICON_MAIL = '<svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/><path d="M4 7l8 6 8-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 var ICON_PROFILE = '<svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 20c0-4.4 3.6-8 8-8s8 3.6 8 8" stroke="currentColor" stroke-width="2"/></svg>';
+var ICON_ADMIN = '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 9.5-4-1.2-7-5-7-9.5V6l7-3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
 var state = {
   user: null,
@@ -583,7 +584,7 @@ async function doRegister(){
     var existing = await apiSelect('trocdecartes_users', 'or=(username.eq.'+encodeURIComponent(username)+',email.eq.'+encodeURIComponent(email)+')&select=id');
     if(existing.length){ renderAuth('register','Ce pseudo ou cet email est déjà pris.'); return; }
     var hash = await sha256(password);
-    var rows = await apiInsert('trocdecartes_users', [{ username: username, email: email, password_hash: hash, city: registerSelectedCity.name, city_lat: registerSelectedCity.lat, city_lng: registerSelectedCity.lng, is_public: false }]);
+    var rows = await apiInsert('trocdecartes_users', [{ username: username, email: email, password_hash: hash, city: registerSelectedCity.name, city_lat: registerSelectedCity.lat, city_lng: registerSelectedCity.lng, is_public: false, last_login: new Date().toISOString() }]);
     if(!rows || !rows.length){ renderAuth('register','Inscription impossible, réessaie.'); return; }
     var u = rows[0];
     var sess = { id: u.id, username: u.username, email: u.email, city: u.city, city_lat: u.city_lat, city_lng: u.city_lng, is_public: u.is_public };
@@ -604,6 +605,7 @@ async function doLogin(){
     if(!u){ renderAuth('login','Identifiants incorrects.'); return; }
     var sess = { id: u.id, username: u.username, email: u.email, city: u.city, city_lat: u.city_lat, city_lng: u.city_lng, is_public: u.is_public };
     saveSession(sess); state.user = sess;
+    apiUpdate('trocdecartes_users', 'id=eq.'+u.id, { last_login: new Date().toISOString() }).catch(function(){});
     boot();
   }catch(e){ renderAuth('login','Erreur : '+e.message); }
 }
@@ -628,6 +630,7 @@ function renderShell(){
       '<button class="tabbtn" data-nav="cart"><span class="ticon">'+ICON_CART+'<span class="tbadge" id="cart-badge" style="display:none;">0</span></span><span class="tlabel">Panier</span></button>'+
       '<button class="tabbtn" data-nav="inbox"><span class="ticon">'+ICON_MAIL+'<span class="tbadge" id="inbox-badge" style="display:none;">0</span></span><span class="tlabel">Messages</span></button>'+
       '<button class="tabbtn" data-nav="profile"><span class="ticon">'+ICON_PROFILE+'</span><span class="tlabel">Profil</span></button>'+
+      (state.isAdmin ? '<button class="tabbtn" data-nav="admin-users"><span class="ticon">'+ICON_ADMIN+'</span><span class="tlabel">Admin</span></button>' : '')+
     '</nav>';
   qs('userchip').textContent = state.user.username;
   qs('logout-btn').onclick = doLogout;
@@ -638,8 +641,8 @@ function renderShell(){
     if(state.isAdmin){
       localStorage.removeItem('trocdecartes_admin');
       state.isAdmin = false;
-      updateAdminBtn();
-      navigate(state.view, state.currentCollectionId);
+      renderShell();
+      navigate('home');
     } else {
       openAdminModal();
     }
@@ -669,7 +672,7 @@ function openAdminModal(){
       localStorage.setItem('trocdecartes_admin','1');
       state.isAdmin = true;
       closeModal();
-      updateAdminBtn();
+      renderShell();
       navigate(state.view, state.currentCollectionId);
     } else {
       qs('admin-err').style.display='block';
@@ -711,6 +714,7 @@ async function navigate(view, arg){
   else if(view==='cart') await renderCart();
   else if(view==='inbox') await renderInbox();
   else if(view==='profile') await renderProfile();
+  else if(view==='admin-users') await renderAdminUsers();
   updateBadges();
 }
 
@@ -1626,6 +1630,34 @@ async function openCardModal(card){
 /* ============ PROFILE ============ */
 
 var profileSelectedCity = null;
+
+/* ============ ADMIN: USERS ============ */
+
+async function renderAdminUsers(){
+  var main = qs('main');
+  main.innerHTML = '<div class="section-head"><h2>Utilisateurs</h2></div><div id="admin-users-list"><p class="muted">Chargement…</p></div>';
+  var box = qs('admin-users-list');
+  var users;
+  try{
+    users = await apiSelect('trocdecartes_users', 'select=id,username,email,city,last_login,created_at');
+  }catch(e){
+    box.innerHTML = '<p class="muted" style="color:var(--missing);">Erreur : '+esc(e.message)+'</p>';
+    return;
+  }
+  users.sort(function(a,b){
+    var da = a.last_login ? new Date(a.last_login).getTime() : 0;
+    var db = b.last_login ? new Date(b.last_login).getTime() : 0;
+    return db - da;
+  });
+  if(!users.length){ box.innerHTML = '<p class="muted">Aucun utilisateur.</p>'; return; }
+  box.innerHTML = users.map(function(u){
+    var last = u.last_login ? new Date(u.last_login).toLocaleString('fr-FR', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : 'jamais connecté';
+    return '<div class="frow2"><div class="favatar">'+esc((u.username[0]||'?')).toUpperCase()+'</div>'+
+      '<div class="fmain"><div class="fu">'+esc(u.username)+'</div><div class="fs">'+esc(u.email||'')+(u.city?' · '+esc(u.city):'')+'</div></div>'+
+      '<span class="muted" style="font-size:11.5px;text-align:right;">'+esc(last)+'</span>'+
+    '</div>';
+  }).join('');
+}
 
 async function renderProfile(){
   var main = qs('main');
