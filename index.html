@@ -601,7 +601,7 @@ async function doRegister(){
     var existing = await apiSelect('trocdecartes_users', 'or=(username.eq.'+encodeURIComponent(username)+',email.eq.'+encodeURIComponent(email)+')&select=id');
     if(existing.length){ renderAuth('register','Ce pseudo ou cet email est déjà pris.'); return; }
     var hash = await sha256(password);
-    var rows = await apiInsert('trocdecartes_users', [{ username: username, email: email, password_hash: hash, city: registerSelectedCity.name, city_lat: registerSelectedCity.lat, city_lng: registerSelectedCity.lng, is_public: false, last_login: new Date().toISOString() }]);
+    var rows = await apiInsert('trocdecartes_users', [{ username: username, email: email, password_hash: hash, city: registerSelectedCity.name, city_lat: registerSelectedCity.lat, city_lng: registerSelectedCity.lng, is_public: true, last_login: new Date().toISOString() }]);
     if(!rows || !rows.length){ renderAuth('register','Inscription impossible, réessaie.'); return; }
     var u = rows[0];
     var sess = { id: u.id, username: u.username, email: u.email, city: u.city, city_lat: u.city_lat, city_lng: u.city_lng, is_public: u.is_public };
