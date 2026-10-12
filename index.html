@@ -1818,10 +1818,13 @@ async function renderFriends(){
       var row = el('<div class="frow2"><div class="favatar">'+esc(u.username[0]||'?').toUpperCase()+'</div><div class="fmain"><div class="fu">'+esc(u.username)+'</div></div>'+
         (already ? '<span class="tag-pending">'+(already.status==='accepted'?'Déjà ami':'En attente')+'</span>' : '<button class="btn-gold" style="padding:7px 12px;font-size:12px;" data-add="'+u.id+'">Ajouter</button>')+
         '</div>');
+      row.style.cursor = 'pointer';
+      row.onclick = function(){ navigate('friend-detail', u.id); };
       box.appendChild(row);
     });
     box.querySelectorAll('[data-add]').forEach(function(btn){
-      btn.onclick = async function(){
+      btn.onclick = async function(e){
+        e.stopPropagation();
         await apiInsert('trocdecartes_friends', [{ user_id: state.user.id, friend_id: btn.getAttribute('data-add'), status:'pending' }]);
         renderFriends();
       };
@@ -1832,16 +1835,20 @@ async function renderFriends(){
     var il = qs('incoming-list');
     incoming.forEach(function(r){
       var row = el('<div class="frow2"><div class="favatar">'+esc((usersMap[r.user_id]||'?')[0]).toUpperCase()+'</div><div class="fmain"><div class="fu">'+esc(usersMap[r.user_id]||'—')+'</div><div class="fs">veut être ami</div></div><button class="btn-gold" style="padding:7px 12px;font-size:12px;" data-acc="'+r.id+'">Accepter</button></div>');
+      row.style.cursor = 'pointer';
+      row.onclick = function(){ navigate('friend-detail', r.user_id); };
       il.appendChild(row);
     });
     il.querySelectorAll('[data-acc]').forEach(function(btn){
-      btn.onclick = async function(){ await apiUpdate('trocdecartes_friends', 'id=eq.'+btn.getAttribute('data-acc'), { status:'accepted' }); renderFriends(); };
+      btn.onclick = async function(e){ e.stopPropagation(); await apiUpdate('trocdecartes_friends', 'id=eq.'+btn.getAttribute('data-acc'), { status:'accepted' }); renderFriends(); };
     });
   }
   if(outgoing.length){
     var ol = qs('outgoing-list');
     outgoing.forEach(function(r){
       var row = el('<div class="frow2"><div class="favatar">'+esc((usersMap[r.friend_id]||'?')[0]).toUpperCase()+'</div><div class="fmain"><div class="fu">'+esc(usersMap[r.friend_id]||'—')+'</div><div class="fs">demande envoyée</div></div><span class="tag-pending">En attente</span></div>');
+      row.style.cursor = 'pointer';
+      row.onclick = function(){ navigate('friend-detail', r.friend_id); };
       ol.appendChild(row);
     });
   }
@@ -1888,10 +1895,13 @@ async function loadProximityList(km, existingRows){
     var row = el('<div class="frow2"><div class="favatar">'+esc((p.username[0]||'?')).toUpperCase()+'</div><div class="fmain"><div class="fu">'+esc(p.username)+'</div><div class="fs">'+esc(p.city||'')+' · '+p.dist.toFixed(1)+' km</div></div>'+
       (status ? '<span class="tag-pending">'+(status==='accepted'?'Déjà ami':'En attente')+'</span>' : '<button class="btn-gold" style="padding:7px 12px;font-size:12px;" data-preq="'+p.id+'">Ajouter</button>')+
     '</div>');
+    row.style.cursor = 'pointer';
+    row.onclick = function(){ navigate('friend-detail', p.id); };
     box.appendChild(row);
   });
   box.querySelectorAll('[data-preq]').forEach(function(btn){
-    btn.onclick = async function(){
+    btn.onclick = async function(e){
+      e.stopPropagation();
       await apiInsert('trocdecartes_friends', [{ user_id: state.user.id, friend_id: btn.getAttribute('data-preq'), status:'pending' }]);
       renderFriends();
     };
